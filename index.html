@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>台风巴威 BAVI · 实时路径与浙江影响</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+<style>
+:root{
+  --ink:#0f1e33; --ink-2:#48566b; --ink-3:#8494a9;
+  --surface:#eef1f6; --panel:rgba(255,255,255,.94); --panel-solid:#ffffff;
+  --line:#e2e8f0; --line-2:#cbd5e1;
+  --accent:#1d4ed8;
+  --lv-severe:#dc2626; --lv-high:#e86a10; --lv-mid:#c79400; --lv-low:#64748b;
+  --c-td:#2e9e44; --c-ts:#2563eb; --c-sts:#c79400; --c-ty:#e86a10; --c-sty:#c026b8; --c-super:#dc2626;
+  --ag-cn:#1d4ed8; --ag-tw:#0d9488; --ag-jp:#7c3aed; --ag-us:#b45309;
+  --shadow-1:0 1px 2px rgba(15,30,51,.06),0 4px 16px rgba(15,30,51,.08);
+  --shadow-2:0 2px 6px rgba(15,30,51,.08),0 12px 32px rgba(15,30,51,.14);
+  --r-lg:14px; --r-md:10px; --r-sm:6px;
+  font-size:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:"PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif;
+  color:var(--ink); background:var(--surface); overflow:hidden;
+  font-variant-numeric:tabular-nums; text-wrap:pretty;
+}
+#map{position:absolute;inset:0;background:#cfe0ee}
+.leaflet-container{font:inherit}
+
+/* ---------- 顶部台风状态卡 ---------- */
+#hud{
+  position:absolute;top:16px;left:16px;z-index:900;max-width:min(560px,calc(100vw - 32px));
+  background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-2);
+  padding:14px 18px 12px;
+}
+#hud .title-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#hud h1{font-size:1.5rem;font-weight:700;letter-spacing:.02em}
+#hud h1 .en{font-weight:500;color:var(--ink-3);font-size:.95rem;margin-left:4px}
+#hud .tfid{color:var(--ink-3);font-size:.8rem}
+.strength-chip{
+  font-size:.8rem;font-weight:600;color:#fff;padding:3px 10px;border-radius:99px;line-height:1.3;
+}
+#hud .metrics{display:flex;gap:0;margin-top:10px;flex-wrap:wrap}
+#hud .metric{padding:2px 16px;border-left:1px solid var(--line)}
+#hud .metric:first-child{padding-left:0;border-left:none}
+#hud .metric .k{font-size:.7rem;color:var(--ink-3);letter-spacing:.05em}
+#hud .metric .v{font-size:1.05rem;font-weight:650;margin-top:1px}
+#hud .metric .v small{font-size:.72rem;font-weight:500;color:var(--ink-2);margin-left:2px}
+#hud .sub{display:flex;gap:14px;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);
+  font-size:.74rem;color:var(--ink-3);flex-wrap:wrap}
+#hud .sub b{color:var(--ink-2);font-weight:600}
+#hud .land-note{margin-top:8px;font-size:.78rem;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;
+  border-radius:var(--r-sm);padding:5px 9px;display:none}
+/* 滚动播报：红橙预警 + 各市最新措施 */
+#ticker{overflow:hidden;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
+.tk-track{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;
+  animation:tk-roll 60s linear infinite}
+#ticker:hover .tk-track{animation-play-state:paused}
+@keyframes tk-roll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion: reduce){.tk-track{animation:none}}
+.tk-it{font-size:.72rem;color:var(--ink-2)}
+.tk-it .tk-city{font-weight:700;color:var(--accent)}
+.tk-it .tk-t{color:var(--ink-3);font-size:.66rem}
+.tk-sep{color:var(--line-2);margin:0 14px;font-size:.7rem}
+
+/* ---------- 右侧影响面板 ---------- */
+#panel{
+  position:absolute;top:16px;right:16px;bottom:16px;width:352px;z-index:900;
+  display:flex;flex-direction:column;
+  background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-2);overflow:hidden;
+}
+#panel header{padding:15px 18px 11px;border-bottom:1px solid var(--line);flex:none}
+#panel header h2{font-size:1.02rem;font-weight:700}
+#panel header .meta{font-size:.73rem;color:var(--ink-3);margin-top:3px}
+#panel header .meta b{color:var(--ink-2)}
+#city-list{flex:1;overflow-y:auto;padding:10px 12px;scrollbar-width:thin}
+.city-card{
+  background:var(--panel-solid);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:10px 13px;margin-bottom:8px;transition:box-shadow .18s,transform .18s;cursor:pointer;
+}
+.city-card:hover{box-shadow:var(--shadow-1);transform:translateY(-1px)}
+.city-card .row1{display:flex;align-items:center;gap:8px}
+.city-card .name{font-size:.98rem;font-weight:700}
+.lv-chip{font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:99px;color:#fff}
+.city-card .dist{margin-left:auto;font-size:1.05rem;font-weight:650}
+.city-card .dist small{font-size:.68rem;font-weight:500;color:var(--ink-3);margin-left:2px}
+.city-card .row2{display:flex;gap:8px;margin-top:6px;font-size:.73rem;color:var(--ink-2);flex-wrap:wrap;align-items:center}
+.city-card .chev{margin-left:2px;flex:none;color:var(--ink-3);transition:transform .2s;font-size:.62rem}
+.city-card.open .chev{transform:rotate(180deg)}
+.city-card .exp{display:none;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+.city-card.open .exp{display:block}
+.exp h4{font-size:.66rem;color:var(--ink-3);font-weight:600;letter-spacing:.06em;margin:6px 0 4px}
+.exp ul{list-style:none}
+.exp li{font-size:.72rem;color:var(--ink-2);line-height:1.55;padding-left:10px;position:relative;margin-bottom:3px}
+.exp li::before{content:'';position:absolute;left:0;top:.58em;width:4px;height:4px;border-radius:50%;background:var(--line-2)}
+.exp .off li::before{background:var(--accent)}
+.exp .alm li::before{background:var(--ac)}
+.exp .alm a{color:inherit;font-weight:650;text-decoration:none}
+.exp .alm a:hover{text-decoration:underline}
+.alm-hi{font-weight:650;font-size:.7rem}
+.exp .t{color:var(--ink-3);font-weight:600;margin-right:3px}
+.exp .none{font-size:.71rem;color:var(--ink-3);line-height:1.5}
+.exp .locate{display:inline-block;margin-top:6px;font-size:.7rem;font-weight:600;color:var(--accent);cursor:pointer}
+.exp .locate:hover{text-decoration:underline}
+#prov-strip{
+  margin-top:9px;background:#fdeeee;border:1px solid #f3c1c1;border-radius:var(--r-sm);
+  padding:6px 10px;font-size:.72rem;color:#7f1d1d;line-height:1.5;
+}
+#prov-strip b{font-size:.8rem}
+#prov-strip .sub2{color:#a05252;font-size:.66rem;margin-top:1px}
+#pv-toggle{display:none;text-align:center;font-size:.68rem;font-weight:600;color:#a05252;
+  padding:5px 0 1px;cursor:pointer}
+.badge{font-size:.68rem;font-weight:600;padding:1.5px 7px;border-radius:var(--r-sm)}
+.badge.in7{background:#fff3e6;color:#9a4a00;border:1px solid #f5cfa6}
+.badge.in10{background:#fdeaea;color:#991b1b;border:1px solid #f3b4b4}
+.trend-near{color:var(--lv-severe);font-weight:600}
+.trend-away{color:#15803d;font-weight:600}
+#panel .foot{flex:none;padding:9px 16px;border-top:1px solid var(--line);font-size:.66rem;color:var(--ink-3);line-height:1.5}
+
+/* ---------- 我的位置 ---------- */
+#user-sec{flex:none;padding:10px 12px 0}
+#list-toggle{
+  display:none;flex:none;margin:8px 12px 0;padding:8px;text-align:center;
+  font-size:.74rem;font-weight:600;color:var(--accent);cursor:pointer;
+  border:1px dashed var(--line-2);border-radius:var(--r-md);
+}
+#user-sec .city-card{margin-bottom:0;border-color:#b6c8f0;background:#f5f8ff}
+#user-sec .name{color:var(--accent)}
+#user-sec .src{font-size:.64rem;color:var(--ink-3);font-weight:400;margin-left:2px}
+.user-dot{position:relative}
+.user-dot .core{
+  position:absolute;inset:5px;background:var(--accent);border:2.5px solid #fff;border-radius:50%;
+  box-shadow:0 1px 6px rgba(29,78,216,.55);
+}
+.user-dot .pulse{
+  position:absolute;inset:0;border-radius:50%;background:rgba(29,78,216,.35);
+  animation:pulse 2s ease-out infinite;
+}
+@keyframes pulse{0%{transform:scale(.4);opacity:.9}70%{transform:scale(1.6);opacity:0}100%{opacity:0}}
+/* 地市中心点：向外扩散波纹，提示可点击 */
+.city-pulse{cursor:pointer}
+.city-pulse .core{
+  position:absolute;left:50%;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;
+  border-radius:50%;background:var(--pc);border:2px solid #fff;box-shadow:0 1px 5px rgba(15,30,51,.4);
+}
+.city-pulse .ring{
+  position:absolute;inset:0;border-radius:50%;border:2.5px solid var(--pc);
+  opacity:0;animation:cp-ring 2.6s ease-out infinite;
+}
+.city-pulse .ring:nth-child(2){animation-delay:1.3s}
+@keyframes cp-ring{0%{transform:scale(.3);opacity:.85}75%{transform:scale(1.1);opacity:0}100%{transform:scale(1.1);opacity:0}}
+@media (prefers-reduced-motion: reduce){.city-pulse .ring,.user-dot .pulse{animation:none;display:none}}
+#locate-btn{
+  position:absolute;right:16px;bottom:150px;z-index:900;width:34px;height:34px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);
+  box-shadow:var(--shadow-1);cursor:pointer;display:grid;place-items:center;color:var(--ink-2);
+}
+#locate-btn:hover{color:var(--accent)}
+#locate-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}
+.dist-line-label{background:none;border:none;box-shadow:none;font-size:.68rem;font-weight:700;color:var(--accent);
+  text-shadow:0 1px 3px #fff,0 0 5px #fff;white-space:nowrap}
+
+/* ---------- 图例 ---------- */
+#legend{
+  position:absolute;left:16px;bottom:88px;z-index:900;
+  background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+  border-radius:var(--r-md);box-shadow:var(--shadow-1);padding:11px 14px;font-size:.72rem;max-width:250px;
+}
+#legend h3{font-size:.72rem;color:var(--ink-3);font-weight:600;letter-spacing:.06em;margin-bottom:6px}
+#legend .grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px}
+#legend .it{display:flex;align-items:center;gap:6px;color:var(--ink-2)}
+#legend .dot{width:9px;height:9px;border-radius:50%;flex:none}
+#legend .sep{border-top:1px solid var(--line);margin:8px 0 7px}
+#legend label.it{cursor:pointer;user-select:none}
+#legend .ln{width:16px;height:0;border-top:2.5px dashed;flex:none}
+#legend input{accent-color:var(--accent);width:12px;height:12px;flex:none}
+
+/* ---------- 时间轴 ---------- */
+#timeline{
+  position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:900;
+  width:min(620px,calc(100vw - 420px));min-width:320px;
+  background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+  border-radius:var(--r-md);box-shadow:var(--shadow-1);padding:10px 16px;
+  display:flex;align-items:center;gap:12px;
+}
+#tl-play{
+  width:32px;height:32px;border-radius:50%;border:none;background:var(--accent);color:#fff;
+  cursor:pointer;flex:none;display:grid;place-items:center;transition:background .15s;
+}
+#tl-play:hover{background:#1a44bd}
+#tl-play svg{width:13px;height:13px;fill:#fff}
+#tl-range{flex:1;appearance:none;height:4px;border-radius:2px;background:var(--line-2);cursor:pointer}
+#tl-range::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);
+  border:2.5px solid #fff;box-shadow:0 1px 4px rgba(15,30,51,.35)}
+#tl-label{font-size:.74rem;color:var(--ink-2);min-width:118px;text-align:right;font-weight:600}
+#tl-live{
+  font-size:.7rem;font-weight:600;border:1px solid var(--line-2);background:#fff;color:var(--ink-2);
+  padding:4px 9px;border-radius:99px;cursor:pointer;flex:none;display:none;
+}
+#tl-live:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- Tweaks ---------- */
+#tweaks-btn{
+  position:absolute;right:384px;bottom:16px;z-index:900;font-size:.72rem;font-weight:600;
+  background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:6px 13px;
+  cursor:pointer;color:var(--ink-2);box-shadow:var(--shadow-1);backdrop-filter:blur(14px);
+}
+#tweaks{
+  position:absolute;right:384px;bottom:52px;z-index:910;width:200px;display:none;
+  background:var(--panel-solid);border:1px solid var(--line);border-radius:var(--r-md);
+  box-shadow:var(--shadow-2);padding:12px 14px;font-size:.76rem;
+}
+#tweaks h3{font-size:.7rem;color:var(--ink-3);letter-spacing:.08em;margin-bottom:8px}
+#tweaks label{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;color:var(--ink-2)}
+#tweaks input[type=checkbox]{accent-color:var(--accent)}
+#tweaks select{width:100%;margin-top:2px;padding:3px 6px;border:1px solid var(--line-2);border-radius:var(--r-sm);
+  font:inherit;color:var(--ink);background:#fff}
+
+/* ---------- 提示 / 加载 ---------- */
+#toast{
+  position:absolute;top:16px;left:50%;transform:translateX(-50%) translateY(-70px);z-index:1200;
+  background:#0f1e33;color:#fff;font-size:.8rem;padding:9px 16px;border-radius:99px;
+  box-shadow:var(--shadow-2);transition:transform .3s ease;pointer-events:none;
+}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#boot{
+  position:absolute;inset:0;z-index:1500;background:var(--surface);
+  display:grid;place-items:center;transition:opacity .4s;
+}
+#boot .inner{text-align:center;color:var(--ink-2)}
+#boot .spin{
+  width:44px;height:44px;margin:0 auto 14px;border-radius:50%;
+  border:3.5px solid var(--line-2);border-top-color:var(--accent);animation:rot 1s linear infinite;
+}
+#boot .err-actions{display:none;margin-top:12px}
+#boot button{font:inherit;font-size:.8rem;font-weight:600;color:#fff;background:var(--accent);
+  border:none;border-radius:var(--r-sm);padding:7px 18px;cursor:pointer}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ---------- 地图元素 ---------- */
+.ty-icon{filter:drop-shadow(0 2px 5px rgba(15,30,51,.4))}
+.ty-icon svg{animation:rot 1.6s linear infinite;display:block}
+.ty-icon.ghost{opacity:.85}
+.city-label{
+  background:none;border:none;box-shadow:none;font-size:.68rem;font-weight:600;color:#33415c;
+  text-shadow:0 1px 3px #fff,0 0 5px #fff,0 -1px 3px #fff;text-align:center;line-height:1.25;
+}
+.city-label .d{font-size:.62rem;font-weight:500;color:#5b6b85}
+.leaflet-popup-content-wrapper{border-radius:var(--r-md);box-shadow:var(--shadow-2);font:inherit}
+.leaflet-popup-content{margin:11px 14px;font-size:.78rem;line-height:1.65;color:var(--ink)}
+.leaflet-popup-content b{font-size:.85rem}
+.city-pop .cp-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.city-pop .cp-head b{font-size:1rem}
+.city-pop .cp-row{margin:2px 0;color:var(--ink-2)}
+.city-pop .cp-off{list-style:none;margin:6px 0 0;padding-top:6px;border-top:1px dashed var(--line)}
+.city-pop .cp-off li{padding-left:10px;position:relative;color:var(--ink-2);margin-bottom:2px}
+.city-pop .cp-off li::before{content:'';position:absolute;left:0;top:.55em;width:4px;height:4px;border-radius:50%;background:var(--accent)}
+.city-pop .cp-more{display:inline-block;margin-top:7px;font-weight:650;color:var(--accent);cursor:pointer}
+.city-pop .cp-more:hover{text-decoration:underline}
+.leaflet-interactive{cursor:pointer}
+.pt-chip{display:inline-block;font-size:.66rem;color:#fff;font-weight:600;border-radius:99px;padding:1px 7px;vertical-align:1px}
+.leaflet-control-zoom{border:1px solid var(--line)!important;border-radius:var(--r-sm)!important;
+  box-shadow:var(--shadow-1)!important;overflow:hidden}
+.leaflet-control-zoom a{color:var(--ink-2)!important}
+.leaflet-control-attribution{font-size:.6rem!important;background:rgba(255,255,255,.7)!important}
+/* 压低底图饱和度，让台风路径与影响着色成为视觉主角 */
+.leaflet-tile-pane{filter:saturate(.55) contrast(.97)}
+.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(200deg) saturate(.5) brightness(.92) contrast(.95)}
+
+/* ---------- 移动端侧栏、摘要条与图例按钮 ---------- */
+#sheet-handle{display:none}
+#scrim{
+  position:absolute;inset:0;z-index:960;background:rgba(15,30,51,.38);
+  opacity:0;pointer-events:none;transition:opacity .28s;
+}
+#drawer-close{
+  display:none;position:absolute;top:10px;right:10px;width:34px;height:34px;place-items:center;
+  border:none;background:var(--surface);border-radius:50%;color:var(--ink-2);font-size:1rem;cursor:pointer;z-index:5;
+}
+#drawer-chip{
+  display:none;position:absolute;left:10px;right:10px;bottom:74px;z-index:900;
+  align-items:center;gap:8px;padding:12px 15px;
+  background:var(--panel);backdrop-filter:blur(14px);border:1.5px solid var(--accent);
+  border-radius:12px;box-shadow:0 3px 14px rgba(29,78,216,.28),var(--shadow-1);cursor:pointer;
+}
+#drawer-chip:active{transform:scale(.985)}
+#drawer-chip .name{font-weight:700;font-size:.88rem;color:var(--accent)}
+#drawer-chip .mid{font-size:.78rem;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+#drawer-chip .chev-r{
+  color:var(--accent);font-size:.92rem;font-weight:700;flex:none;
+  animation:chev-nudge 1.6s ease-in-out infinite;
+}
+@keyframes chev-nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+@media (prefers-reduced-motion: reduce){#drawer-chip .chev-r{animation:none}}
+#legend-btn{
+  display:none;position:absolute;left:10px;bottom:calc(var(--sheet-h,0px) + 62px);z-index:900;
+  width:44px;height:44px;place-items:center;font-size:.66rem;font-weight:600;color:var(--ink-2);
+  background:var(--panel);border:1px solid var(--line);border-radius:50%;box-shadow:var(--shadow-1);cursor:pointer;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width:900px){
+  :root{font-size:15px}
+  #hud{top:8px;left:8px;right:8px;max-width:none;padding:10px 12px 8px}
+  #hud h1{font-size:1.2rem}
+  #hud .metrics{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #hud .metrics::-webkit-scrollbar{display:none}
+  #hud .metric{padding:2px 12px;flex:none}
+  #hud .sub{gap:10px;font-size:.68rem}
+  /* 地市情况改为右侧滑出侧栏 */
+  #panel{
+    top:0;bottom:0;right:0;left:auto;width:min(86vw,360px);height:auto;
+    border-radius:16px 0 0 16px;border-top:none;border-right:none;border-bottom:none;
+    transform:translateX(105%);transition:transform .28s ease;z-index:1000;
+    box-shadow:-8px 0 32px rgba(15,30,51,.25);
+  }
+  body.drawer-open #panel{transform:translateX(0)}
+  #scrim{opacity:0;pointer-events:none}
+  body.drawer-open #scrim{opacity:1;pointer-events:auto}
+  #drawer-close{display:grid}
+  #drawer-chip{display:flex}
+  #panel header{padding-top:12px}
+  #panel .foot{padding-bottom:calc(9px + env(safe-area-inset-bottom))}
+  #timeline{
+    display:flex;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom)/2);
+    transform:none;width:auto;min-width:0;padding:7px 12px;gap:9px;
+  }
+  #tl-play{width:38px;height:38px}
+  #tl-label{min-width:0;font-size:.66rem;white-space:nowrap}
+  #tl-range::-webkit-slider-thumb{width:20px;height:20px}
+  #legend{left:10px;bottom:184px;display:none;max-width:230px}
+  #legend.show{display:block}
+  #legend-btn{display:grid;bottom:130px}
+  #locate-btn{right:10px;bottom:130px;width:44px;height:44px}
+  #locate-btn svg{width:20px;height:20px}
+  #tweaks-btn{right:10px;bottom:184px;padding:9px 14px}
+  #tweaks{right:10px;bottom:224px}
+  .leaflet-control-zoom{display:none}
+  .leaflet-popup-content-wrapper{max-width:calc(100vw - 44px)}
+  .city-card{padding:12px 14px}
+  .exp .locate,.cp-more{padding:6px 0;display:inline-block}
+  /* 已定位时只保留"我的位置"，11 地市总览收起到开关后面 */
+  body.has-loc #city-list{display:none}
+  body.has-loc #list-toggle{display:block}
+  body.has-loc.show-list #city-list{display:block}
+  /* 信息降密：隐藏推算说明，省级红条默认折叠 2 行，倒计时隐藏 */
+  #panel header .meta{display:none}
+  #panel header h2{font-size:.95rem;padding-right:36px}
+  #panel header{padding-bottom:8px}
+  #prov-strip{margin-top:2px}
+  #prov-strip.clamp .pv-in{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+  #prov-strip.clamp .sub2{display:none}
+  #panel .foot .foot-in{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+  #pv-toggle{display:block}
+  #hud .m-count-wrap{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="hud">
+  <div class="title-row">
+    <h1>台风巴威<span class="en">BAVI</span></h1>
+    <span id="hud-chip" class="strength-chip">—</span>
+    <span class="tfid">编号 202609</span>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="k">中心风力</div><div class="v" id="m-wind">—</div></div>
+    <div class="metric"><div class="k">中心气压</div><div class="v" id="m-pres">—</div></div>
+    <div class="metric"><div class="k">移向 / 移速</div><div class="v" id="m-move">—</div></div>
+    <div class="metric"><div class="k">中心位置</div><div class="v" id="m-pos">—</div></div>
+  </div>
+  <div class="sub">
+    <span>报文 <b id="m-time">—</b></span>
+    <span>距浙江最近 <b id="m-near">—</b></span>
+    <span id="m-ocean-wrap" style="display:none">海洋警报 <b id="m-ocean"></b></span>
+    <span class="m-count-wrap">下次刷新 <b id="m-count">—</b></span>
+  </div>
+  <div class="land-note" id="m-land"></div>
+  <div id="ticker"><div class="tk-track" id="tk-track"></div></div>
+</div>
+
+<div id="scrim"></div>
+<aside id="panel">
+  <button id="drawer-close" title="关闭">✕</button>
+  <header>
+    <h2>浙江省 11 地市影响评估</h2>
+    <div class="meta">依据实时位置 + 风圈 + 中央气象台预报路径推算 · 更新于 <b id="p-time">—</b></div>
+    <div id="prov-strip"></div>
+    <div id="pv-toggle">展开省级详情 ▾</div>
+  </header>
+  <div id="user-sec"></div>
+  <div id="list-toggle">显示全部 11 地市 ▾</div>
+  <div id="city-list"></div>
+  <div class="foot"><div class="foot-in">影响等级为基于台风位置、风圈半径与预报路径的几何推算，仅供参考。"实时预警信号"来自中央气象台接口，随页面每 5 分钟自动刷新；"官方发布"措施为公开通报的人工整理快照，可能滞后。均请以当地防汛部门最新发布为准。路径数据：浙江省水利厅。</div></div>
+</aside>
+
+<div id="legend">
+  <h3>台风强度</h3>
+  <div class="grid">
+    <span class="it"><span class="dot" style="background:var(--c-td)"></span>热带低压</span>
+    <span class="it"><span class="dot" style="background:var(--c-ts)"></span>热带风暴</span>
+    <span class="it"><span class="dot" style="background:var(--c-sts)"></span>强热带风暴</span>
+    <span class="it"><span class="dot" style="background:var(--c-ty)"></span>台风</span>
+    <span class="it"><span class="dot" style="background:var(--c-sty)"></span>强台风</span>
+    <span class="it"><span class="dot" style="background:var(--c-super)"></span>超强台风</span>
+  </div>
+  <div class="sep"></div>
+  <h3>风圈（大风影响范围）</h3>
+  <div class="grid">
+    <span class="it"><span class="ln" style="border-color:#c79400"></span>7级风圈</span>
+    <span class="it"><span class="ln" style="border-color:#e86a10"></span>10级风圈</span>
+    <span class="it"><span class="ln" style="border-color:#dc2626"></span>12级风圈</span>
+  </div>
+  <div class="sep"></div>
+  <h3>预报机构 <span id="fc-issued" style="font-weight:500;letter-spacing:0"></span></h3>
+  <div class="grid" id="agency-toggles"></div>
+</div>
+
+<div id="timeline">
+  <button id="tl-play" title="回放路径"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+  <input type="range" id="tl-range" min="0" max="0" value="0">
+  <span id="tl-label">—</span>
+  <button id="tl-live">回到实时</button>
+</div>
+
+<div id="drawer-chip"><span class="name">地市情况</span><span class="mid"></span><span class="chev-r">▸</span></div>
+<button id="legend-btn" title="图例与预报机构">图例</button>
+<button id="locate-btn" title="定位我的位置">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+  <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+</button>
+<button id="tweaks-btn">Tweaks</button>
+<div id="tweaks">
+  <h3>TWEAKS</h3>
+  <label><input type="checkbox" id="tw-radar" checked> 雷达回波<span id="tw-radar-t" style="color:var(--ink-3);font-size:.66rem"></span></label>
+  <label><input type="checkbox" id="tw-rain24"> 24h累计雨量</label>
+  <div style="font-size:.64rem;color:var(--ink-3);padding:0 0 4px 20px">色阶：绿（小雨）→ 黄 → 红 → 紫（特大暴雨）</div>
+  <label><input type="checkbox" id="tw-circles" checked> 显示风圈</label>
+  <label><input type="checkbox" id="tw-fill" checked> 地市按影响着色</label>
+  <label><input type="checkbox" id="tw-dark"> 深色底图</label>
+  <label style="display:block">底图样式
+    <select id="tw-base"><option value="vec">高德 · 矢量</option><option value="sat">高德 · 卫星</option></select>
+  </label>
+</div>
+
+<div id="toast"></div>
+
+<div id="boot">
+  <div class="inner">
+    <div class="spin"></div>
+    <div id="boot-msg">正在获取台风巴威实时数据…</div>
+    <div class="err-actions"><button onclick="location.reload()">重试</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="assets/zhejiang.js"></script>
+<script src="assets/measures.js"></script>
+<script>
+'use strict';
+/* ================= 配置 ================= */
+const TFID = '202609';
+const API = 'https://typhoon.slt.zj.gov.cn/Api/TyphoonInfo/' + TFID;
+const REFRESH_MS = 5 * 60 * 1000;
+const CITIES = [
+  {name:'杭州', lat:30.2741, lng:120.1551},
+  {name:'宁波', lat:29.8683, lng:121.5440},
+  {name:'温州', lat:28.0006, lng:120.6994},
+  {name:'嘉兴', lat:30.7469, lng:120.7554},
+  {name:'湖州', lat:30.8930, lng:120.0868},
+  {name:'绍兴', lat:30.0304, lng:120.5802},
+  {name:'金华', lat:29.0784, lng:119.6474},
+  {name:'衢州', lat:28.9359, lng:118.8742},
+  {name:'舟山', lat:29.9853, lng:122.2072},
+  {name:'台州', lat:28.6561, lng:121.4206},
+  {name:'丽水', lat:28.4676, lng:119.9229},
+];
+const INTENSITY = {
+  '热带低压':{c:'#2e9e44', s:'TD'}, '热带风暴':{c:'#2563eb', s:'TS'},
+  '强热带风暴':{c:'#c79400', s:'STS'}, '台风':{c:'#e86a10', s:'TY'},
+  '强台风':{c:'#c026b8', s:'STY'}, '超强台风':{c:'#dc2626', s:'SuperTY'},
+};
+const AGENCIES = [
+  {key:'中国', match:['中国'], color:'#1d4ed8', on:true},
+  {key:'中国台湾', match:['中国台湾','台湾'], color:'#0d9488', on:false},
+  {key:'日本', match:['日本'], color:'#7c3aed', on:false},
+  {key:'美国', match:['美国'], color:'#b45309', on:false},
+];
+const LEVELS = {
+  severe:{label:'严重', color:'#dc2626', rank:0, fill:.32},
+  high:  {label:'较大', color:'#e86a10', rank:1, fill:.28},
+  mid:   {label:'一般', color:'#c79400', rank:2, fill:.20},
+  low:   {label:'较小', color:'#64748b', rank:3, fill:.08},
+};
+/* 中央气象台预警信号接口（CORS 开放，实时） */
+const NMC_API = 'https://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=100&signaltype=&signallevel=&province=' + encodeURIComponent('浙江省');
+const ALARM_COLORS = {'红色':'#dc2626', '橙色':'#e86a10', '黄色':'#c79400', '蓝色':'#2563eb'};
+const ALARM_RANK = {'红色':0, '橙色':1, '黄色':2, '蓝色':3};
+/* 各地官方措施数据在 assets/measures.js（可被 tools 定时任务更新，页面每次刷新动态重载） */
+const MEAS = () => window.OFFICIAL_DATA || {asof:'—', prov:{}, cities:{}};
+function reloadMeasures(){
+  return new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'assets/measures.js?t=' + Date.now();
+    s.onload = () => { s.remove(); res(true); };
+    s.onerror = () => { s.remove(); res(false); };
+    document.body.appendChild(s);
+  });
+}
+/* 分等级参考措施（通用建议，与官方发布互补） */
+const ADVICE = {
+  severe: ['服从政府转移安排：危房、地质灾害点、低洼易涝区、海上养殖人员应转尽转',
+           '备足48–72小时饮水、食品、照明与充电设备',
+           '台风过境期间不外出，远离门窗、幕墙与广告牌',
+           '车辆撤离低洼地下车库、大树与围墙旁',
+           '山区（丽金衢温台）警惕小流域山洪与滑坡，雨停后24–48小时仍是高危期'],
+  high:   ['加固门窗，收回阳台悬挂物与楼顶杂物',
+           '暂停户外高空、水上与临时设施作业',
+           '疏通天沟、排水口，防范短时强降雨内涝',
+           '避免前往沿海、山区景区与涉水区域'],
+  mid:    ['持续关注气象台预警信号变化',
+           '暂缓海上、海边活动安排（外围风圈影响海面先起风）',
+           '检查家庭应急物资，留意停课停运通知'],
+  low:    ['常态关注台风动态与本地预报即可'],
+};
+
+/* ================= 工具 ================= */
+const $ = id => document.getElementById(id);
+const parseBJT = s => new Date(s.replace(' ', 'T') + '+08:00');
+const fmtDM = d => `${d.getMonth()+1}月${d.getDate()}日${String(d.getHours()).padStart(2,'0')}时`;
+const fmtHM = d => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+function haversine(la1, lo1, la2, lo2){
+  const R = 6371, r = Math.PI/180;
+  const a = Math.sin((la2-la1)*r/2)**2 + Math.cos(la1*r)*Math.cos(la2*r)*Math.sin((lo2-lo1)*r/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function bearing(la1, lo1, la2, lo2){
+  const r = Math.PI/180;
+  const y = Math.sin((lo2-lo1)*r)*Math.cos(la2*r);
+  const x = Math.cos(la1*r)*Math.sin(la2*r) - Math.sin(la1*r)*Math.cos(la2*r)*Math.cos((lo2-lo1)*r);
+  return (Math.atan2(y,x)/r + 360) % 360;
+}
+function destPoint(lat, lng, km, brgDeg){
+  return [lat + km/110.574*Math.cos(brgDeg*Math.PI/180),
+          lng + km/(111.320*Math.cos(lat*Math.PI/180))*Math.sin(brgDeg*Math.PI/180)];
+}
+// 风圈四象限半径，接口顺序为 东北|东南|西南|西北
+function parseRadii(str){
+  if(!str || !String(str).trim()) return null;
+  const p = String(str).split('|').map(Number).filter(v => !isNaN(v) && v > 0);
+  if(!p.length) return null;
+  return p.length === 4 ? p : [p[0],p[0],p[0],p[0]];
+}
+const quadIdx = brg => Math.floor(((brg % 360) + 360) % 360 / 90); // 0NE 1SE 2SW 3NW
+// 视野留白：桌面端避开右侧面板，移动端避开顶部 HUD 与底部抽屉
+function fitPad(){
+  if(window.matchMedia('(max-width:900px)').matches){
+    return {tl:[20, 130], br:[20, 135]};   // 底部避开摘要条与时间轴
+  }
+  return {tl:[30, 150], br:[380, 50]};
+}
+function inCircle(radii, distKm, brg){ return !!radii && distKm <= radii[quadIdx(brg)]; }
+function intensityOf(strong){ return INTENSITY[strong] || {c:'#64748b', s:'—'}; }
+// WGS-84 → GCJ-02，仅用于在高德底图上显示用户标记（台风数据与距离计算均保持 WGS-84）
+function wgs2gcj(lat, lng){
+  const a = 6378245, ee = 0.00669342162296594323, r = Math.PI/180;
+  const outOfChina = lng < 72 || lng > 138 || lat < 0.8 || lat > 55.8;
+  if(outOfChina) return [lat, lng];
+  const tf = (x, y, isLat) => {
+    let v = isLat
+      ? -100 + 2*x + 3*y + .2*y*y + .1*x*y + .2*Math.sqrt(Math.abs(x))
+      : 300 + x + 2*y + .1*x*x + .1*x*y + .1*Math.sqrt(Math.abs(x));
+    v += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI))*2/3;
+    v += isLat ? (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI))*2/3 + (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30))*2/3
+               : (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI))*2/3 + (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI))*2/3;
+    return v;
+  };
+  const dl = tf(lng-105, lat-35, false), dt = tf(lng-105, lat-35, true);
+  const rl = lat*r, m = 1 - ee*Math.sin(rl)*Math.sin(rl), sm = Math.sqrt(m);
+  return [lat + dt*180/(a*(1-ee)/(m*sm)*Math.PI), lng + dl*180/(a/sm*Math.cos(rl)*Math.PI)];
+}
+function pointInRing(lat, lng, ring){
+  let inside = false;
+  for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+    const [xi, yi] = ring[i], [xj, yj] = ring[j]; // GeoJSON: [lng, lat]
+    if((yi > lat) !== (yj > lat) && lng < (xj-xi)*(lat-yi)/(yj-yi)+xi) inside = !inside;
+  }
+  return inside;
+}
+function pointInGeom(lat, lng, geom){
+  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+  return polys.some(rings => pointInRing(lat, lng, rings[0]) && rings.slice(1).every(h => !pointInRing(lat, lng, h)));
+}
+function cityOfPoint(lat, lng){
+  const f = window.ZJ_GEO.features.find(f => pointInGeom(lat, lng, f.geometry));
+  return f ? f.properties.name.replace('市','') : null;
+}
+function typhoonSVG(size, color){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40">
+    <path d="M20 20 m0 -6 a6 6 0 1 1 -6 6 c0 -10 4 -15 13 -17 c-5 5 -6 8 -7 11z" fill="${color}"/>
+    <path d="M20 20 m0 6 a6 6 0 1 1 6 -6 c0 10 -4 15 -13 17 c5 -5 6 -8 7 -11z" fill="${color}"/>
+    <circle cx="20" cy="20" r="3.2" fill="#fff"/></svg>`;
+}
+
+/* ================= 地图初始化 ================= */
+const map = L.map('map', {zoomControl:false, attributionControl:true}).setView([27.6, 123.2], 7);
+L.control.zoom({position:'bottomright'}).addTo(map);
+const baseLayers = {
+  vec: L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+       {subdomains:['1','2','3','4'], attribution:'© 高德地图 · 台风数据: 浙江省水利厅'}),
+  sat: L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',
+       {subdomains:['1','2','3','4'], attribution:'© 高德地图 · 台风数据: 浙江省水利厅'}),
+};
+baseLayers.vec.addTo(map);
+
+const gTrack = L.layerGroup().addTo(map);     // 已走路径
+const gForecast = L.layerGroup().addTo(map);  // 预报路径
+const gCircles = L.layerGroup().addTo(map);   // 风圈
+const gCurrent = L.layerGroup().addTo(map);   // 当前位置
+const gCities = L.layerGroup().addTo(map);    // 地市面
+const gLabels = L.layerGroup().addTo(map);    // 地市标注
+const gGhost = L.layerGroup().addTo(map);     // 回放幽灵标记
+const gUser = L.layerGroup().addTo(map);      // 用户位置
+const gPulse = L.layerGroup().addTo(map);     // 地市中心波纹（可点击提示）
+// 降雨图层放在瓦片之上、矢量之下的独立 pane
+map.createPane('rain');
+map.getPane('rain').style.zIndex = 350;
+map.getPane('rain').style.pointerEvents = 'none';
+const gRadar = L.layerGroup().addTo(map);     // 雷达回波（默认开）
+const gRain24 = L.layerGroup();               // 24h 累计雨量等值面（默认关）
+// 雷达拼图四象限地理边界（radarType=1），来自官方前端
+const RADAR_BOUNDS = {
+  radar0_0: [[36.580247, 67.5], [55.7766, 104.073486]],
+  radar0_1: [[36.580247, 104.073486], [55.7766, 140.625]],
+  radar1_0: [[11.1784, 67.5], [36.580247, 104.073486]],
+  radar1_1: [[11.1784, 104.073486], [36.580247, 140.625]],
+  full: [[12.17563341623027, 69.85883897374661], [54.338914427211094, 140.09971829625096]], // radarType=2 单图
+};
+
+/* 地市边界（内嵌数据，避免运行时跨域依赖）；点击查看该市情况与措施 */
+const cityShapes = {};
+L.geoJSON(window.ZJ_GEO, {
+  style: {color:'#64748b', weight:1.1, fillColor:'#64748b', fillOpacity:.08},
+  onEachFeature: (f, ly) => {
+    const name = f.properties.name.replace('市', '');
+    cityShapes[name] = ly;
+    ly.on('click', e => showCityPopup(name, e.latlng));
+    ly.on('mouseover', () => ly.setStyle({weight:2.4, fillOpacity:Math.min(.5, cityStyle(name).fillOpacity + .13)}));
+    ly.on('mouseout', () => ly.setStyle(cityStyle(name)));
+  }
+}).addTo(gCities);
+
+/* ================= 状态 ================= */
+const state = {
+  data: null, impacts: [], playing: false, playTimer: null,
+  selIdx: -1,          // -1 = 实时（最新点）
+  showCircles: true, showFill: true,
+  nextRefreshAt: 0,
+  showRadar: true, showRain24: false,
+  // 展开的城市卡片，跨自动刷新保持；支持 #open=温州,台州 直达展开
+  openCities: new Set(((location.hash.match(/open=([^&]+)/) || [])[1] || '').split(',').map(decodeURIComponent).filter(Boolean)),
+  userLoc: null,        // {lat,lng,src} WGS-84
+  userFocused: false,   // 已按用户位置调整过视野
+  alarms: null,         // 中央气象台实时预警
+  impactByName: {},     // 城市名 → 影响计算结果
+  provExpanded: false,  // 移动端省级红条展开状态
+  userCardOpen: !window.matchMedia('(max-width:900px)').matches,  // 移动端"我的位置"默认收起
+};
+function alarmsOfCity(name){ return state.alarms ? (state.alarms.byCity[name] || []) : null; }
+function alarmBadge(name){
+  const alm = alarmsOfCity(name);
+  if(!alm || !alm.length) return '';
+  const top = alm[0];
+  return `<span class="alm-hi" style="color:${ALARM_COLORS[top.color]}">${top.type}${top.color}预警${alm.length > 1 ? `等${alm.length}条` : ''}</span>`;
+}
+function alarmBlock(name){
+  if(!state.alarms) return '';
+  const alm = alarmsOfCity(name);
+  const head = `<h4>实时预警信号（中央气象台 ${fmtHM(state.alarms.fetchedAt)} 更新${state.alarms.stale ? ' · 可能滞后' : ''}）</h4>`;
+  if(!alm || !alm.length) return head + '<div class="none">当前无生效预警信号</div>';
+  return head + `<ul class="alm">${alm.slice(0,4).map(a =>
+    `<li style="--ac:${ALARM_COLORS[a.color]}"><a href="${a.url}" target="_blank" rel="noopener">${a.type}${a.color}预警</a> · ${a.issuer}<span class="t"> ${a.time}</span></li>`).join('')}</ul>`
+    + (alm.length > 4 ? `<div class="none">…另有 ${alm.length-4} 条生效中</div>` : '');
+}
+
+/* ================= 数据获取 ================= */
+async function fetchData(){
+  const res = await fetch(API, {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  if(!j || !Array.isArray(j.points) || !j.points.length) throw new Error('数据为空');
+  return j;
+}
+async function fetchAlarms(){
+  const res = await fetch(NMC_API, {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  const raw = j?.data?.page?.list;
+  if(!Array.isArray(raw)) throw new Error('格式异常');
+  const seen = new Set(), byCity = {}, prov = [];
+  let total = 0;
+  for(const a of raw){
+    const m = a.title.match(/发布(.+?)(红色|橙色|黄色|蓝色)预警/);
+    if(!m) continue;
+    // 同一区域同类型只保留最新一条（接口按时间倒序）
+    const key = String(a.alertid).split('_')[0] + m[1];
+    if(seen.has(key)) continue;
+    seen.add(key);
+    const city = CITIES.find(c => a.title.includes(c.name))?.name || null;
+    const issuerM = a.title.match(/浙江省(.+?)气象台/);
+    let issuer = issuerM ? issuerM[1] : a.title.replace(/发布.*$/, '');
+    if(city) issuer = issuer.replace(city + '市', '') || '市本级';
+    const item = {type:m[1], color:m[2], time:a.issuetime.slice(5, 16), issuer,
+                  url:'https://www.nmc.cn' + a.url, rank:ALARM_RANK[m[2]]};
+    total++;
+    if(city) (byCity[city] = byCity[city] || []).push(item);
+    else prov.push(item);
+  }
+  for(const c in byCity) byCity[c].sort((x,y) => x.rank - y.rank);
+  prov.sort((x,y) => x.rank - y.rank);
+  const reds = total ? Object.values(byCity).flat().concat(prov).filter(i => i.color === '红色').length : 0;
+  return {byCity, prov, total, reds, fetchedAt: new Date(), stale:false};
+}
+async function fetchRadar(){
+  const res = await fetch('https://typhoon.slt.zj.gov.cn/Api/LastRadar', {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  gRadar.clearLayers();
+  if(+j.radarType === 2){
+    if(j.radar0_0) L.imageOverlay(j.radar0_0, RADAR_BOUNDS.full, {opacity:.62, pane:'rain'}).addTo(gRadar);
+  }else{
+    for(const k of ['radar0_0', 'radar0_1', 'radar1_0', 'radar1_1'])
+      if(j[k] && j[k].length > 100) L.imageOverlay(j[k], RADAR_BOUNDS[k], {opacity:.62, pane:'rain'}).addTo(gRadar);
+  }
+  // synTime "202607111242" → 12:42
+  const t = String(j.synTime || '');
+  $('tw-radar-t').textContent = t.length >= 12 ? `（${t.slice(8,10)}:${t.slice(10,12)} 实况）` : '';
+}
+async function fetchRain24(){
+  const res = await fetch('https://typhoon.slt.zj.gov.cn/Api/LeastRain/24', {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  const contours = JSON.parse(j.contours || '[]');
+  gRain24.clearLayers();
+  for(const c of contours){
+    const [r, g, b, a] = String(c.color).split(',').map(Number);
+    if(!Array.isArray(c.latAndLong) || c.latAndLong.length < 3) continue;
+    L.polygon(c.latAndLong, {stroke:false, fillColor:`rgb(${r},${g},${b})`,
+      fillOpacity:Math.min(.42, (a || 255)/255*.42), pane:'rain', interactive:false}).addTo(gRain24);
+  }
+}
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3200);
+}
+async function refresh(first){
+  const alarmsP = fetchAlarms().catch(() => null);   // 预警接口失败不阻塞主数据
+  if(state.showRadar) fetchRadar().catch(() => {});  // 雨情图层独立更新，失败静默保留旧图
+  if(state.showRain24) fetchRain24().catch(() => {});
+  if(!first) await reloadMeasures();                 // 拾取定时任务更新的措施数据
+  try{
+    state.data = await fetchData();
+    const al = await alarmsP;
+    if(al) state.alarms = al;
+    else if(state.alarms) state.alarms.stale = true;
+    state.nextRefreshAt = Date.now() + REFRESH_MS;
+    renderAll(first);
+    if(first){
+      $('boot').style.opacity = 0; setTimeout(() => $('boot').remove(), 450);
+      locateUser(false);   // 优先定位用户，成功后视野聚焦其周边
+      const pm = location.hash.match(/pop=([^&,]+)/);   // #pop=城市 直接打开地图气泡
+      if(pm){
+        const c = CITIES.find(x => x.name === decodeURIComponent(pm[1]));
+        if(c) showCityPopup(c.name, L.latLng(c.lat, c.lng));
+      }
+    }
+  }catch(e){
+    if(first){
+      $('boot-msg').textContent = '数据获取失败：' + e.message + '（请检查网络后重试）';
+      document.querySelector('#boot .err-actions').style.display = 'block';
+      document.querySelector('#boot .spin').style.display = 'none';
+    }else{
+      state.nextRefreshAt = Date.now() + REFRESH_MS;
+      toast('本次刷新失败，继续显示上次数据');
+    }
+  }
+}
+
+/* ================= 影响计算 ================= */
+// 预报挂在路径点上，最新点可能缺某机构预报：从末尾回溯找该机构最近一次发布（最多回看24个点）
+function getAgencyForecast(data, match){
+  for(let i = data.points.length-1; i >= 0 && i > data.points.length-25; i--){
+    const fc = (data.points[i].forecast || []).find(f => match.includes(f.tm));
+    if(fc && Array.isArray(fc.forecastpoints) && fc.forecastpoints.length > 1) return fc.forecastpoints;
+  }
+  return null;
+}
+function chinaForecast(data){
+  return getAgencyForecast(data, ['中国']) || getAgencyForecast(data, ['中国台湾', '台湾', '日本', '美国']) || [];
+}
+// 已走路径 + 中国预报路径按 15 分钟线性采样，用于求各市最近距离与时刻
+function samplePath(data){
+  const pts = data.points.map(p => ({t:parseBJT(p.time).getTime(), lat:+p.lat, lng:+p.lng, strong:p.strong, power:p.power}));
+  for(const f of chinaForecast(data)){
+    const t = parseBJT(f.time).getTime();
+    if(t > pts[pts.length-1].t) pts.push({t, lat:+f.lat, lng:+f.lng, strong:f.strong, power:f.power, fc:true});
+  }
+  const out = [];
+  for(let i=0; i<pts.length-1; i++){
+    const a = pts[i], b = pts[i+1], span = b.t - a.t, n = Math.max(1, Math.round(span/9e5));
+    for(let k=0; k<n; k++){
+      const r = k/n;
+      out.push({t:a.t+span*r, lat:a.lat+(b.lat-a.lat)*r, lng:a.lng+(b.lng-a.lng)*r, strong:r<.5?a.strong:b.strong, fc:a.fc||b.fc});
+    }
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+function computeImpacts(data){
+  const path = samplePath(data);
+  const cur = data.points[data.points.length-1];
+  const prev = data.points[data.points.length-2] || cur;
+  const now = Date.now();
+  const r7 = parseRadii(cur.radius7), r10 = parseRadii(cur.radius10);
+
+  return CITIES.map(c => {
+    const distNow = haversine(c.lat, c.lng, +cur.lat, +cur.lng);
+    const distPrev = haversine(c.lat, c.lng, +prev.lat, +prev.lng);
+    const brg = bearing(+cur.lat, +cur.lng, c.lat, c.lng); // 城市位于台风的哪个象限
+    const in7 = inCircle(r7, distNow, brg), in10 = inCircle(r10, distNow, brg);
+
+    let best = null;                      // 全程最近
+    let bestFuture = null;                // 未来最近
+    for(const p of path){
+      const d = haversine(c.lat, c.lng, p.lat, p.lng);
+      if(!best || d < best.d) best = {d, t:p.t, strong:p.strong};
+      if(p.t >= now && (!bestFuture || d < bestFuture.d)) bestFuture = {d, t:p.t, strong:p.strong};
+    }
+    const passed = best && bestFuture && best.t < now && best.d < bestFuture.d - 1;
+
+    const futureMin = bestFuture ? bestFuture.d : best.d;
+    let level;
+    if(in10 || futureMin < 100) level = 'severe';
+    else if(in7 || futureMin < 180) level = 'high';
+    else if(futureMin < 320) level = 'mid';
+    else level = 'low';
+
+    return {...c, distNow, in7, in10, level, best, bestFuture, passed,
+            trend: distNow < distPrev - 1 ? 'near' : (distNow > distPrev + 1 ? 'away' : 'flat')};
+  }).sort((a,b) => LEVELS[a.level].rank - LEVELS[b.level].rank || a.distNow - b.distNow);
+}
+
+/* ================= 渲染 ================= */
+function drawTrack(data){
+  gTrack.clearLayers();
+  const pts = data.points;
+  for(let i=0; i<pts.length-1; i++){
+    L.polyline([[+pts[i].lat, +pts[i].lng], [+pts[i+1].lat, +pts[i+1].lng]],
+      {color:intensityOf(pts[i+1].strong).c, weight:2.5, opacity:.95}).addTo(gTrack);
+  }
+  pts.forEach((p, i) => {
+    if(i === pts.length-1) return;
+    L.circleMarker([+p.lat, +p.lng], {radius:3.4, color:'#fff', weight:1.2, fillColor:intensityOf(p.strong).c, fillOpacity:1})
+      .bindPopup(pointPopup(p, '实况')).addTo(gTrack);
+  });
+}
+function pointPopup(p, tag){
+  const it = intensityOf(p.strong);
+  return `<b>${fmtDM(parseBJT(p.time))}</b> <span class="pt-chip" style="background:${it.c}">${p.strong||'—'}</span><br>
+    风力 ${p.power||'—'} 级（${p.speed||'—'} m/s）· 气压 ${p.pressure||'—'} hPa<br>
+    ${p.movedirection ? `移向 ${p.movedirection} · 移速 ${p.movespeed} km/h<br>` : ''}
+    <span style="color:#8494a9">${tag} · ${(+p.lat).toFixed(1)}°N ${(+p.lng).toFixed(1)}°E</span>`;
+}
+function drawForecasts(data){
+  gForecast.clearLayers();
+  for(const ag of AGENCIES){
+    if(!ag.on) continue;
+    const fps = getAgencyForecast(data, ag.match);
+    if(!fps) continue;
+    L.polyline(fps.map(p => [+p.lat, +p.lng]), {color:ag.color, weight:2, dashArray:'6 5', opacity:.9}).addTo(gForecast);
+    fps.slice(1).forEach(p => {
+      L.circleMarker([+p.lat, +p.lng], {radius:3, color:ag.color, weight:1.4, fillColor:'#fff', fillOpacity:1})
+        .bindPopup(pointPopup(p, ag.key + '预报')).addTo(gForecast);
+    });
+  }
+  // 预报发布时刻（取中国预报的 ybsj），让"预报是新的"可见
+  const cn = chinaForecast(data);
+  const ybsj = cn.length > 1 && cn[1].ybsj ? new Date(cn[1].ybsj) : null;
+  $('fc-issued').textContent = ybsj ? fmtDM(ybsj) + '发布' : '';
+}
+function windPolygon(lat, lng, radii, color, fillOp){
+  const ring = [];
+  for(let b=0; b<=360; b+=4) ring.push(destPoint(lat, lng, radii[quadIdx(b === 360 ? 359 : b)], b));
+  return L.polygon(ring, {color, weight:1.4, dashArray:'4 4', fillColor:color, fillOpacity:fillOp, interactive:false});
+}
+// 风圈颜色编码风圈等级（7/10/12级，黄/橙/红，气象惯例），台风自身强度由中心图标与路径颜色表达
+function drawCircles(pt){
+  gCircles.clearLayers();
+  if(!state.showCircles || !pt) return;
+  const r7 = parseRadii(pt.radius7), r10 = parseRadii(pt.radius10), r12 = parseRadii(pt.radius12);
+  if(r7)  windPolygon(+pt.lat, +pt.lng, r7, '#c79400', .07).addTo(gCircles);
+  if(r10) windPolygon(+pt.lat, +pt.lng, r10, '#e86a10', .11).addTo(gCircles);
+  if(r12) windPolygon(+pt.lat, +pt.lng, r12, '#dc2626', .16).addTo(gCircles);
+}
+function tyMarker(pt, ghost){
+  const it = intensityOf(pt.strong);
+  return L.marker([+pt.lat, +pt.lng], {
+    icon: L.divIcon({className:'ty-icon' + (ghost ? ' ghost' : ''), html:typhoonSVG(ghost ? 34 : 44, it.c),
+                     iconSize:[ghost?34:44, ghost?34:44], iconAnchor:[ghost?17:22, ghost?17:22]}),
+    interactive: !ghost, zIndexOffset: 1000,
+  });
+}
+function drawCurrent(data){
+  gCurrent.clearLayers();
+  const cur = data.points[data.points.length-1];
+  tyMarker(cur, false).bindPopup(pointPopup(cur, data.isactive === '1' ? '当前位置' : '末次定位')).addTo(gCurrent);
+}
+function cityStyle(name){
+  const im = state.impactByName[name];
+  if(!im || !state.showFill) return {color:'#64748b', weight:1.1, fillColor:'#64748b', fillOpacity:.06};
+  const lv = LEVELS[im.level];
+  return {color:lv.color, weight:1.2, fillColor:lv.color, fillOpacity:lv.fill};
+}
+function closestText(im){
+  if(im.in10 || im.in7) return `已在${im.in10 ? '10级' : '7级'}风圈影响范围内`;
+  if(im.passed) return `已过最近点（${Math.round(im.best.d)} km · ${fmtDM(new Date(im.best.t))}）`;
+  if(im.bestFuture) return `预计最近 <b>${Math.round(im.bestFuture.d)} km</b> · ${fmtDM(new Date(im.bestFuture.t))}`;
+  return '—';
+}
+function showCityPopup(name, latlng){
+  const im = state.impactByName[name];
+  if(!im) return;
+  const lv = LEVELS[im.level];
+  const alm = alarmsOfCity(name);
+  const top = alm && alm[0];
+  const off = MEAS().cities[name] || [];
+  const trend = im.trend === 'near' ? '<span class="trend-near">↓ 接近中</span>'
+              : im.trend === 'away' ? '<span class="trend-away">↑ 远离中</span>' : '';
+  const html = `<div class="city-pop">
+    <div class="cp-head"><b>${name}</b>
+      <span class="lv-chip" style="background:${lv.color}">影响${lv.label}</span>
+      ${im.in10 ? '<span class="badge in10">10级风圈内</span>' : im.in7 ? '<span class="badge in7">7级风圈内</span>' : ''}
+    </div>
+    <div class="cp-row">距台风中心 <b>${Math.round(im.distNow)} km</b> ${trend}</div>
+    <div class="cp-row">${closestText(im)}</div>
+    ${top ? `<div class="cp-row"><span class="alm-hi" style="color:${ALARM_COLORS[top.color]}">▲ ${top.type}${top.color}预警</span>${alm.length > 1 ? `（等 ${alm.length} 条生效）` : ''}</div>` : ''}
+    ${off.length ? `<ul class="cp-off">${off.slice(0,2).map(o => `<li>${o.s.length > 32 ? o.s.slice(0,31) + '…' : o.s}</li>`).join('')}</ul>` : ''}
+    <span class="cp-more" onclick="__cityDetail('${name}')">查看完整措施与预警 →</span>
+  </div>`;
+  L.popup({maxWidth:300, autoPanPaddingTopLeft:fitPad().tl, autoPanPaddingBottomRight:fitPad().br})
+    .setLatLng(latlng).setContent(html).openOn(map);
+}
+window.__cityDetail = name => scrollToCityCard(name);
+function paintCities(impacts){
+  state.impactByName = {};
+  for(const im of impacts) state.impactByName[im.name] = im;
+  for(const im of impacts){
+    const ly = cityShapes[im.name];
+    if(ly) ly.setStyle(cityStyle(im.name));
+  }
+  gPulse.clearLayers();
+  for(const im of impacts){
+    const c = LEVELS[im.level].color;
+    L.marker([im.lat, im.lng], {
+      icon: L.divIcon({className:'city-pulse', iconSize:[38,38], iconAnchor:[19,19],
+        html:`<span class="ring" style="--pc:${c}"></span><span class="ring" style="--pc:${c}"></span><span class="core" style="--pc:${c}"></span>`}),
+      keyboard:false, zIndexOffset:500, title:`${im.name}：点击查看影响与措施`,
+    }).on('click', () => showCityPopup(im.name, L.latLng(im.lat, im.lng))).addTo(gPulse);
+  }
+  gLabels.clearLayers();
+  for(const im of impacts){
+    L.marker([im.lat, im.lng], {
+      icon: L.divIcon({className:'city-label', iconSize:[74,30], iconAnchor:[37,15],
+        html:`${im.name}<br><span class="d">${Math.round(im.distNow)} km</span>`}),
+      interactive:false,
+    }).addTo(gLabels);
+  }
+  updateLabelVisibility();
+}
+// 低缩放时 11 市标注会互相压盖（底图自带市名），仅在放大后显示距离标注
+function updateLabelVisibility(){
+  if(map.getZoom() >= 8){ if(!map.hasLayer(gLabels)) map.addLayer(gLabels); }
+  else if(map.hasLayer(gLabels)) map.removeLayer(gLabels);
+}
+map.on('zoomend', updateLabelVisibility);
+function renderPanel(data, impacts){
+  const list = $('city-list');
+  list.innerHTML = impacts.map(im => {
+    const lv = LEVELS[im.level];
+    const closest = closestText(im);
+    const trend = im.trend === 'near' ? '<span class="trend-near">↓ 接近中</span>'
+                : im.trend === 'away' ? '<span class="trend-away">↑ 远离中</span>' : '';
+    const off = MEAS().cities[im.name];
+    const offHtml = off
+      ? `<h4>防御措施（整理快照 · 截至${MEAS().asof}）</h4><ul class="off">${off.map(o =>
+          `<li><span class="t">${o.t}</span>${o.s}</li>`).join('')}</ul>`
+      : `<h4>防御措施</h4><div class="none">暂未收集到该市专项发布，全市执行省防指Ⅱ级响应部署。</div>`;
+    const advHtml = `<h4>「${lv.label}」等级参考措施</h4><ul>${ADVICE[im.level].map(a => `<li>${a}</li>`).join('')}</ul>`;
+    const open = state.openCities.has(im.name) ? ' open' : '';
+    return `<div class="city-card${open}" data-city="${im.name}">
+      <div class="row1">
+        <span class="name">${im.name}</span>
+        <span class="lv-chip" style="background:${lv.color}">${lv.label}</span>
+        ${im.in10 ? '<span class="badge in10">10级风圈内</span>' : im.in7 ? '<span class="badge in7">7级风圈内</span>' : ''}
+        <span class="dist">${Math.round(im.distNow)}<small>km</small></span>
+        <span class="chev">▼</span>
+      </div>
+      <div class="row2"><span>${closest}</span>${trend}${alarmBadge(im.name)}</div>
+      <div class="exp">${alarmBlock(im.name)}${offHtml}${advHtml}<span class="locate">在地图上查看 →</span></div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.city-card').forEach(el => {
+    el.addEventListener('click', () => {
+      el.classList.toggle('open');
+      state.openCities[el.classList.contains('open') ? 'add' : 'delete'](el.dataset.city);
+    });
+    el.querySelector('.locate').addEventListener('click', ev => {
+      ev.stopPropagation();
+      const c = CITIES.find(x => x.name === el.dataset.city);
+      map.flyTo([c.lat, c.lng], 9, {duration:.8});
+    });
+  });
+  const cur = data.points[data.points.length-1];
+  $('p-time').textContent = fmtDM(parseBJT(cur.time));
+  const p = MEAS().prov;
+  const strip = $('prov-strip');
+  strip.innerHTML = '<div class="pv-in">' + (p.levelNote || '省级响应信息获取中…')
+    + (p.note ? `<div class="sub2">${p.note}</div>` : '')
+    + '<div class="sub2" id="prov-alarms"></div></div>';
+  strip.classList.toggle('clamp', mqMobile.matches && !state.provExpanded);
+  const pa = $('prov-alarms');
+  if(state.alarms){
+    const provTop = state.alarms.prov.filter(a => a.rank <= 1).slice(0, 2)
+      .map(a => `<b style="color:${ALARM_COLORS[a.color]}">${a.type}${a.color}预警</b>`).join('、');
+    pa.innerHTML = `全省现行气象预警 <b>${state.alarms.total}</b> 条（红色 ${state.alarms.reds} 条）· ${fmtHM(state.alarms.fetchedAt)} 更新`
+      + (provTop ? `<br>省级：${provTop} 生效中` : '');
+  }else{
+    pa.textContent = '气象预警数据暂不可用（将随下次刷新重试）';
+  }
+}
+/* ---------- 我的位置 ---------- */
+function computePointImpact(lat, lng, data){
+  const path = samplePath(data);
+  const cur = data.points[data.points.length-1];
+  const now = Date.now();
+  const distNow = haversine(lat, lng, +cur.lat, +cur.lng);
+  const brg = bearing(+cur.lat, +cur.lng, lat, lng);
+  const in7 = inCircle(parseRadii(cur.radius7), distNow, brg);
+  const in10 = inCircle(parseRadii(cur.radius10), distNow, brg);
+  let best = null, bestFuture = null;
+  for(const p of path){
+    const d = haversine(lat, lng, p.lat, p.lng);
+    if(!best || d < best.d) best = {d, t:p.t};
+    if(p.t >= now && (!bestFuture || d < bestFuture.d)) bestFuture = {d, t:p.t};
+  }
+  const futureMin = bestFuture ? bestFuture.d : best.d;
+  let level;
+  if(in10 || futureMin < 100) level = 'severe';
+  else if(in7 || futureMin < 180) level = 'high';
+  else if(futureMin < 320) level = 'mid';
+  else level = 'low';
+  const passed = best && bestFuture && best.t < now && best.d < bestFuture.d - 1;
+  return {distNow, in7, in10, best, bestFuture, passed, level};
+}
+function scrollToCityCard(name){
+  state.openCities.add(name);
+  if(mqMobile.matches){
+    document.body.classList.add('show-list');   // 总览收起时先展开
+    updateListToggle();
+    setDrawer(true);
+  }
+  renderPanel(state.data, state.impacts);
+  const el = document.querySelector(`#city-list .city-card[data-city="${name}"]`);
+  if(el) $('city-list').scrollTop = el.offsetTop - $('city-list').offsetTop - 6;
+}
+function updateListToggle(){
+  $('list-toggle').textContent = document.body.classList.contains('show-list') ? '收起地市总览 ▴' : '显示全部 11 地市 ▾';
+}
+$('list-toggle').addEventListener('click', () => {
+  document.body.classList.toggle('show-list');
+  updateListToggle();
+});
+function renderUser(){
+  gUser.clearLayers();
+  const sec = $('user-sec');
+  if(!state.userLoc || !state.data){ sec.innerHTML = ''; state.userImpact = null; return; }
+  const {lat, lng, src} = state.userLoc;
+  const data = state.data, cur = data.points[data.points.length-1];
+  const im = computePointImpact(lat, lng, data);
+  const lv = LEVELS[im.level];
+  const cityName = cityOfPoint(lat, lng);
+  const nearest = CITIES.map(c => ({c, d:haversine(lat, lng, c.lat, c.lng)})).sort((a,b) => a.d - b.d)[0];
+  const cityForMeasures = cityName || (nearest.d < 80 ? nearest.c.name : null);
+  const whereTxt = cityName ? `位于${cityName}市` : `浙江省外 · 距最近的${nearest.c.name} ${Math.round(nearest.d)} km`;
+  state.userImpact = {im, cityName: cityForMeasures};   // 供底部摘要条使用
+  renderChip();
+
+  const [glat, glng] = wgs2gcj(lat, lng);
+  L.marker([glat, glng], {
+    icon: L.divIcon({className:'user-dot', html:'<span class="pulse"></span><span class="core"></span>', iconSize:[22,22], iconAnchor:[11,11]}),
+    interactive:false, zIndexOffset:1200,
+  }).addTo(gUser);
+  L.polyline([[glat, glng], [+cur.lat, +cur.lng]], {color:'#1d4ed8', weight:1.5, dashArray:'2 5', opacity:.7, interactive:false}).addTo(gUser);
+  L.marker([(glat + +cur.lat)/2, (glng + +cur.lng)/2], {
+    icon: L.divIcon({className:'dist-line-label', html:`距台风中心 ${Math.round(im.distNow)} km`, iconSize:[130,16], iconAnchor:[65,8]}),
+    interactive:false,
+  }).addTo(gUser);
+
+  const closest = closestText(im);
+  sec.innerHTML = `<div class="city-card${state.userCardOpen ? ' open' : ''}">
+    <div class="row1">
+      <span class="name">我的位置</span><span class="src">${src}</span>
+      <span class="lv-chip" style="background:${lv.color}">${lv.label}</span>
+      ${im.in10 ? '<span class="badge in10">10级风圈内</span>' : im.in7 ? '<span class="badge in7">7级风圈内</span>' : ''}
+      <span class="dist">${Math.round(im.distNow)}<small>km</small></span>
+      <span class="chev">▼</span>
+    </div>
+    <div class="row2"><span>${closest}</span><span>${whereTxt}</span>${cityForMeasures ? alarmBadge(cityForMeasures) : ''}</div>
+    <div class="exp">
+      <h4>「${lv.label}」等级参考措施</h4>
+      <ul>${ADVICE[im.level].slice(0,3).map(a => `<li>${a}</li>`).join('')}</ul>
+      ${cityForMeasures ? `<span class="locate" data-goto="${cityForMeasures}">查看${cityForMeasures}官方措施 →</span>` : ''}
+    </div>
+  </div>`;
+  const card = sec.querySelector('.city-card');
+  card.addEventListener('click', () => {
+    state.userCardOpen = !state.userCardOpen;
+    card.classList.toggle('open', state.userCardOpen);
+  });
+  const go = sec.querySelector('[data-goto]');
+  if(go) go.addEventListener('click', ev => { ev.stopPropagation(); scrollToCityCard(go.dataset.goto); });
+}
+function focusUser(){
+  const [glat, glng] = wgs2gcj(state.userLoc.lat, state.userLoc.lng);
+  map.fitBounds(L.latLngBounds([[glat-.55, glng-.75], [glat+.55, glng+.75]]),
+                {paddingTopLeft:fitPad().tl, paddingBottomRight:fitPad().br});
+  state.userFocused = true;
+}
+function setUserLoc(lat, lng, src){
+  state.userLoc = {lat, lng, src};
+  document.body.classList.add('has-loc', 'show-list');   // 侧栏内 11 地市总览默认展开，可手动收起
+  updateListToggle();
+  const cityName = cityOfPoint(lat, lng);
+  if(cityName) state.openCities.add(cityName);
+  if(state.data){
+    renderUser();
+    renderPanel(state.data, state.impacts);
+    focusUser();
+  }
+}
+function locateUser(fromClick){
+  const hm = location.hash.match(/loc=(-?[\d.]+),(-?[\d.]+)/);
+  if(hm){ setUserLoc(+hm[1], +hm[2], '链接指定'); return; }
+  if(!navigator.geolocation){ if(fromClick) toast('当前环境不支持定位'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => setUserLoc(pos.coords.latitude, pos.coords.longitude, '浏览器定位'),
+    () => toast(fromClick ? '定位失败：请检查系统定位权限' : '未获取到位置，显示全省视野（可点右下角按钮重试）'),
+    {enableHighAccuracy:false, timeout:8000, maximumAge:300000});
+}
+
+/* 滚动播报：红/橙预警（按时间新→旧）+ 各市最新一条措施 */
+function renderTicker(){
+  const track = $('tk-track');
+  const items = [];
+  if(state.alarms){
+    Object.entries(state.alarms.byCity)
+      .flatMap(([c, list]) => list.map(a => ({...a, city:c})))
+      .filter(a => a.rank <= 1)
+      .sort((x, y) => y.time.localeCompare(x.time))
+      .slice(0, 10)
+      .forEach(a => items.push(
+        `<span class="tk-it"><b style="color:${ALARM_COLORS[a.color]}">●</b> ${a.city}·${a.issuer}发布${a.type}${a.color}预警 <span class="tk-t">${a.time}</span></span>`));
+  }
+  const cities = MEAS().cities;
+  for(const c in cities){
+    const m = cities[c][0];
+    items.push(`<span class="tk-it"><span class="tk-city">${c}</span> ${m.s} <span class="tk-t">${m.t}</span></span>`);
+  }
+  if(!items.length){ $('ticker').style.display = 'none'; return; }
+  $('ticker').style.display = 'block';
+  const half = items.join('<span class="tk-sep">◆</span>');
+  track.innerHTML = half + '<span class="tk-sep">◆</span>' + half + '<span class="tk-sep">◆</span>';
+  requestAnimationFrame(() => {
+    track.style.animationDuration = Math.max(25, Math.round(track.scrollWidth / 2 / 45)) + 's';
+  });
+}
+function renderHUD(data, impacts){
+  const cur = data.points[data.points.length-1];
+  const it = intensityOf(cur.strong);
+  const chip = $('hud-chip');
+  chip.textContent = (cur.strong || '—') + (data.isactive === '1' ? '' : ' · 已停编');
+  chip.style.background = it.c;
+  $('m-wind').innerHTML = `${cur.power || '—'}<small>级 · ${cur.speed || '—'} m/s</small>`;
+  $('m-pres').innerHTML = `${cur.pressure || '—'}<small>hPa</small>`;
+  $('m-move').innerHTML = `${cur.movedirection || '—'}<small>${cur.movespeed || '—'} km/h</small>`;
+  $('m-pos').innerHTML = `${(+cur.lat).toFixed(1)}°N<small>${(+cur.lng).toFixed(1)}°E</small>`;
+  $('m-time').textContent = fmtDM(parseBJT(cur.time));
+  const near = impacts.reduce((a,b) => a.distNow < b.distNow ? a : b);
+  $('m-near').textContent = `${near.name} ${Math.round(near.distNow)} km`;
+  // 海浪/风暴潮警报：从省级措施快照文本中提取（海洋预警无公开接口，随快照2小时更新）
+  const provTxt = (MEAS().prov.note || '') + (MEAS().prov.levelNote || '');
+  const marine = ['海浪', '风暴潮'].map(t => {
+    const m = provTxt.match(new RegExp(t + '(红|橙|黄|蓝)色'));
+    return m ? `<span style="color:${ALARM_COLORS[m[1] + '色']}">${t}${m[1]}色</span>` : null;
+  }).filter(Boolean);
+  $('m-ocean-wrap').style.display = marine.length ? '' : 'none';
+  $('m-ocean').innerHTML = marine.join(' · ');
+  const land = data.land && data.land.length ? data.land[data.land.length-1] : null;
+  const ln = $('m-land');
+  if(land){
+    ln.style.display = 'block';
+    ln.textContent = `登陆信息：${land.landtime || ''} ${land.landaddress || land.info || JSON.stringify(land)}`;
+  } else ln.style.display = 'none';
+}
+function renderTimeline(data){
+  const r = $('tl-range');
+  r.max = data.points.length - 1;
+  if(state.selIdx < 0) r.value = r.max;
+  updateTimelineLabel(data);
+}
+function updateTimelineLabel(data){
+  const idx = state.selIdx < 0 ? data.points.length-1 : state.selIdx;
+  const p = data.points[idx];
+  $('tl-label').textContent = `${fmtDM(parseBJT(p.time))} · ${p.strong || ''}`;
+  $('tl-live').style.display = state.selIdx < 0 ? 'none' : 'inline-block';
+}
+function showAt(idx){
+  const data = state.data;
+  state.selIdx = idx >= data.points.length-1 ? -1 : idx;
+  gGhost.clearLayers();
+  if(state.selIdx >= 0){
+    const p = data.points[state.selIdx];
+    tyMarker(p, true).addTo(gGhost);
+    drawCircles(p);
+  }else{
+    drawCircles(data.points[data.points.length-1]);
+  }
+  updateTimelineLabel(data);
+}
+function renderAll(first){
+  const data = state.data;
+  drawTrack(data);
+  drawForecasts(data);
+  drawCurrent(data);
+  if(state.selIdx < 0) drawCircles(data.points[data.points.length-1]);
+  state.impacts = computeImpacts(data);
+  paintCities(state.impacts);
+  renderPanel(data, state.impacts);
+  renderUser();
+  renderHUD(data, state.impacts);
+  renderTicker();
+  renderChip();
+  renderTimeline(data);
+  if(state.userFocused) return;
+  if(first){
+    // 初始视野聚焦浙江 + 当前位置 + 预报路径；完整历史路径可缩小查看
+    const cur = data.points[data.points.length-1];
+    const b = L.latLngBounds([[27.0, 118.0], [31.2, 123.5]]);
+    b.extend([+cur.lat, +cur.lng]);
+    chinaForecast(data).forEach(p => b.extend([+p.lat, +p.lng]));
+    map.fitBounds(b, {paddingTopLeft:fitPad().tl, paddingBottomRight:fitPad().br});
+  }
+}
+
+/* ================= 交互 ================= */
+$('tl-range').addEventListener('input', e => { stopPlay(); showAt(+e.target.value); });
+$('tl-live').addEventListener('click', () => { stopPlay(); $('tl-range').value = $('tl-range').max; showAt(state.data.points.length-1); });
+function stopPlay(){ state.playing = false; clearInterval(state.playTimer); $('tl-play').innerHTML = '<svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg>'; }
+$('tl-play').addEventListener('click', () => {
+  if(state.playing){ stopPlay(); return; }
+  state.playing = true;
+  $('tl-play').innerHTML = '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="3.6" height="12"/><rect x="9.4" y="2" width="3.6" height="12"/></svg>';
+  let i = state.selIdx < 0 ? 0 : state.selIdx;
+  state.playTimer = setInterval(() => {
+    if(!state.data) return;
+    if(i >= state.data.points.length-1){ stopPlay(); showAt(state.data.points.length-1); return; }
+    $('tl-range').value = i; showAt(i); i++;
+  }, 260);
+});
+
+const agWrap = $('agency-toggles');
+for(const ag of AGENCIES){
+  const lb = document.createElement('label');
+  lb.className = 'it';
+  lb.innerHTML = `<input type="checkbox" ${ag.on ? 'checked' : ''}><span class="ln" style="border-color:${ag.color}"></span>${ag.key}`;
+  lb.querySelector('input').addEventListener('change', e => { ag.on = e.target.checked; if(state.data) drawForecasts(state.data); });
+  agWrap.appendChild(lb);
+}
+
+$('locate-btn').addEventListener('click', () => {
+  if(state.userLoc){ focusUser(); return; }
+  locateUser(true);
+});
+$('tweaks-btn').addEventListener('click', () => {
+  const t = $('tweaks'); t.style.display = t.style.display === 'block' ? 'none' : 'block';
+});
+$('tw-radar').addEventListener('change', e => {
+  state.showRadar = e.target.checked;
+  if(state.showRadar){ map.addLayer(gRadar); fetchRadar().catch(() => toast('雷达数据获取失败')); }
+  else map.removeLayer(gRadar);
+});
+$('tw-rain24').addEventListener('change', e => {
+  state.showRain24 = e.target.checked;
+  if(state.showRain24){ map.addLayer(gRain24); fetchRain24().catch(() => toast('雨量数据获取失败')); }
+  else map.removeLayer(gRain24);
+});
+$('tw-circles').addEventListener('change', e => {
+  state.showCircles = e.target.checked;
+  if(state.data) showAt(state.selIdx < 0 ? state.data.points.length-1 : state.selIdx);
+});
+$('tw-fill').addEventListener('change', e => { state.showFill = e.target.checked; if(state.impacts.length) paintCities(state.impacts); });
+$('tw-dark').addEventListener('change', e => document.body.classList.toggle('dark-tiles', e.target.checked));
+$('tw-base').addEventListener('change', e => {
+  const v = e.target.value;
+  Object.values(baseLayers).forEach(l => map.removeLayer(l));
+  baseLayers[v].addTo(map);
+});
+
+/* ---------- 移动端侧栏与摘要条 ---------- */
+const mqMobile = window.matchMedia('(max-width:900px)');
+function setDrawer(open){ document.body.classList.toggle('drawer-open', open); }
+$('drawer-chip').addEventListener('click', () => setDrawer(true));
+$('drawer-close').addEventListener('click', () => setDrawer(false));
+$('scrim').addEventListener('click', () => setDrawer(false));
+// 底部摘要条：已定位显示个人影响概要，否则提示打开侧栏
+function renderChip(){
+  const mid = document.querySelector('#drawer-chip .mid');
+  const name = document.querySelector('#drawer-chip .name');
+  if(state.userImpact){
+    const {im, cityName} = state.userImpact;
+    const lv = LEVELS[im.level];
+    name.innerHTML = `我的位置 <span class="lv-chip" style="background:${lv.color}">${lv.label}</span>`;
+    const alm = cityName ? alarmsOfCity(cityName) : null;
+    mid.innerHTML = `距中心 <b>${Math.round(im.distNow)}km</b>`
+      + (im.in7 || im.in10 ? ` · ${im.in10 ? '10' : '7'}级风圈内` : '')
+      + (alm && alm.length ? ` · <span style="color:${ALARM_COLORS[alm[0].color]};font-weight:600">${alm[0].type}${alm[0].color}预警</span>` : '');
+  }else{
+    name.textContent = '地市情况';
+    mid.textContent = state.impacts.length ? `影响最重：${state.impacts[0].name}（${LEVELS[state.impacts[0].level].label}）` : '加载中…';
+  }
+}
+
+$('legend-btn').addEventListener('click', () => $('legend').classList.toggle('show'));
+function toggleProv(){
+  state.provExpanded = !state.provExpanded;
+  $('prov-strip').classList.toggle('clamp', mqMobile.matches && !state.provExpanded);
+  $('pv-toggle').textContent = state.provExpanded ? '收起省级详情 ▴' : '展开省级详情 ▾';
+}
+$('pv-toggle').addEventListener('click', toggleProv);
+$('prov-strip').addEventListener('click', () => { if(mqMobile.matches) toggleProv(); });
+
+/* 刷新倒计时 */
+setInterval(() => {
+  if(!state.nextRefreshAt) return;
+  const s = Math.max(0, Math.round((state.nextRefreshAt - Date.now())/1000));
+  $('m-count').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}, 1000);
+
+/* ================= 启动 ================= */
+refresh(true);
+setInterval(() => refresh(false), REFRESH_MS);
+</script>
+</body>
+</html>
