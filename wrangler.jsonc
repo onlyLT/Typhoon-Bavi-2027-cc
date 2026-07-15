@@ -1,6 +1,6 @@
 {
   // Cloudflare Workers 静态资产部署配置（无服务端代码，纯静态托管）
-  "name": "typhoon-bavi",
+  "name": "typhoon-bavi-2027-cc",
   "compatibility_date": "2026-07-15",
   "assets": {
     "directory": "."
